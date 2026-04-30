@@ -1,5 +1,6 @@
 // OPERATION: HYDRO STRIKE — RSVP Command Server
 // Express + Postgres, deploys to Railway
+// Resilient: boots HTTP first, retries DB in background, won't crash-loop on DB issues
 require('dotenv').config();
 
 const express = require('express');
@@ -17,32 +18,62 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ----- Database -----
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && /railway|amazonaws|render|heroku/.test(process.env.DATABASE_URL)
-    ? { rejectUnauthorized: false }
-    : false
-});
+let pool = null;
+let dbReady = false;
+
+function buildPool() {
+  if (!process.env.DATABASE_URL) {
+    console.warn('[DB] DATABASE_URL not set — RSVPs will return 503 until Postgres is attached');
+    return null;
+  }
+  return new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: /railway|amazonaws|render|heroku|supabase|neon/.test(process.env.DATABASE_URL)
+      ? { rejectUnauthorized: false }
+      : false,
+    connectionTimeoutMillis: 8000,
+    idleTimeoutMillis: 30000
+  });
+}
 
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS rsvps (
-      id SERIAL PRIMARY KEY,
-      parent_name      TEXT NOT NULL,
-      parent_phone     TEXT,
-      parent_email     TEXT,
-      kid_names        TEXT NOT NULL,
-      kid_count        INTEGER DEFAULT 1,
-      attending        TEXT NOT NULL DEFAULT 'YES',
-      squad_preference TEXT,
-      allergies        TEXT,
-      notes            TEXT,
-      ip               TEXT,
-      user_agent       TEXT,
-      created_at       TIMESTAMPTZ DEFAULT NOW()
-    );
-  `);
-  console.log('[DB] rsvps table ready');
+  if (!pool) pool = buildPool();
+  if (!pool) return false;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rsvps (
+        id SERIAL PRIMARY KEY,
+        parent_name      TEXT NOT NULL,
+        parent_phone     TEXT,
+        parent_email     TEXT,
+        kid_names        TEXT NOT NULL,
+        kid_count        INTEGER DEFAULT 1,
+        attending        TEXT NOT NULL DEFAULT 'YES',
+        squad_preference TEXT,
+        allergies        TEXT,
+        notes            TEXT,
+        ip               TEXT,
+        user_agent       TEXT,
+        created_at       TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    dbReady = true;
+    console.log('[DB] rsvps table ready ✓');
+    return true;
+  } catch (err) {
+    dbReady = false;
+    console.error('[DB] init failed:', err.message);
+    return false;
+  }
+}
+
+// Retry DB init in background until it works
+async function dbWatchdog() {
+  while (!dbReady) {
+    const ok = await initDB();
+    if (ok) break;
+    await new Promise(r => setTimeout(r, 5000));
+  }
 }
 
 // ----- Helpers -----
@@ -61,6 +92,15 @@ function checkAdmin(req, res, next) {
   next();
 }
 
+function requireDB(req, res, next) {
+  if (!dbReady) {
+    return res.status(503).json({
+      error: 'Database not connected yet. If you just deployed, wait 30s and retry. Otherwise check that Postgres is attached and DATABASE_URL is set.'
+    });
+  }
+  next();
+}
+
 // ----- Public RSVP page (with OG meta injection) -----
 app.get('/', (req, res) => {
   try {
@@ -68,7 +108,7 @@ app.get('/', (req, res) => {
     let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
     html = html.replace(/__BASE_URL__/g, base);
     res.set('Content-Type', 'text/html; charset=utf-8');
-    res.set('Cache-Control', 'public, max-age=300'); // 5min cache so unfurlers don't hammer
+    res.set('Cache-Control', 'public, max-age=300');
     res.send(html);
   } catch (err) {
     console.error('[/] error', err);
@@ -76,13 +116,13 @@ app.get('/', (req, res) => {
   }
 });
 
-// ----- Admin page (auth handled client-side via prompt + key in URL) -----
+// ----- Admin page -----
 app.get('/admin', (req, res) => {
   res.set('X-Robots-Tag', 'noindex, nofollow');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// ----- Static (invitation.jpg, share-card.jpg, etc.) -----
+// ----- Static assets -----
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '7d',
   etag: true
@@ -90,22 +130,22 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // ----- Health check -----
 app.get('/health', (req, res) => {
-  res.json({ ok: true, ts: new Date().toISOString() });
+  res.json({
+    ok: true,
+    db: dbReady ? 'connected' : 'disconnected',
+    public_url: PUBLIC_URL || '(auto-detect)',
+    admin_key_set: ADMIN_KEY !== 'changeme',
+    ts: new Date().toISOString()
+  });
 });
 
 // ----- Submit RSVP -----
-app.post('/api/rsvp', async (req, res) => {
+app.post('/api/rsvp', requireDB, async (req, res) => {
   try {
     const {
-      parent_name,
-      parent_phone,
-      parent_email,
-      kid_names,
-      kid_count,
-      attending,
-      squad_preference,
-      allergies,
-      notes
+      parent_name, parent_phone, parent_email,
+      kid_names, kid_count, attending,
+      squad_preference, allergies, notes
     } = req.body || {};
 
     if (!parent_name || !String(parent_name).trim()) {
@@ -139,7 +179,7 @@ app.post('/api/rsvp', async (req, res) => {
       ]
     );
 
-    console.log(`[RSVP] #${result.rows[0].id} - ${parent_name} (${kid_names})`);
+    console.log(`[RSVP] #${result.rows[0].id} — ${parent_name} (${kid_names})`);
     res.json({ ok: true, id: result.rows[0].id });
   } catch (err) {
     console.error('[RSVP] error', err);
@@ -148,7 +188,7 @@ app.post('/api/rsvp', async (req, res) => {
 });
 
 // ----- Admin: list roster + stats -----
-app.get('/api/rsvps', checkAdmin, async (req, res) => {
+app.get('/api/rsvps', checkAdmin, requireDB, async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM rsvps ORDER BY created_at DESC`);
     const rows = result.rows;
@@ -171,7 +211,7 @@ app.get('/api/rsvps', checkAdmin, async (req, res) => {
 });
 
 // ----- Admin: delete an RSVP -----
-app.delete('/api/rsvp/:id', checkAdmin, async (req, res) => {
+app.delete('/api/rsvp/:id', checkAdmin, requireDB, async (req, res) => {
   try {
     await pool.query(`DELETE FROM rsvps WHERE id = $1`, [parseInt(req.params.id) || 0]);
     res.json({ ok: true });
@@ -180,17 +220,18 @@ app.delete('/api/rsvp/:id', checkAdmin, async (req, res) => {
   }
 });
 
-// ----- Boot -----
-initDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`╔══════════════════════════════════════════╗`);
-    console.log(`║  OPERATION: HYDRO STRIKE - RSVP COMMAND  ║`);
-    console.log(`║  Online on port ${String(PORT).padEnd(24)} ║`);
-    console.log(`║  Admin key: ${(ADMIN_KEY === 'changeme' ? '⚠ DEFAULT - SET ADMIN_KEY' : 'configured').padEnd(28)} ║`);
-    console.log(`║  Public URL: ${(PUBLIC_URL || '(auto-detect from request)').padEnd(27)} ║`);
-    console.log(`╚══════════════════════════════════════════╝`);
-  });
-}).catch(err => {
-  console.error('[BOOT] DB init failed:', err);
-  process.exit(1);
+// ----- Boot: HTTP first, DB connects in background -----
+app.listen(PORT, () => {
+  console.log(`╔════════════════════════════════════════════╗`);
+  console.log(`║  OPERATION: HYDRO STRIKE - RSVP COMMAND    ║`);
+  console.log(`║  HTTP online on port ${String(PORT).padEnd(22)}║`);
+  console.log(`║  Admin key: ${(ADMIN_KEY === 'changeme' ? '⚠ DEFAULT (set ADMIN_KEY)' : 'set ✓').padEnd(31)}║`);
+  console.log(`║  Public URL: ${(PUBLIC_URL || '(auto from request)').padEnd(30)}║`);
+  console.log(`║  DB URL:    ${(process.env.DATABASE_URL ? 'set, connecting...' : '⚠ NOT SET — attach Postgres').padEnd(31)}║`);
+  console.log(`╚════════════════════════════════════════════╝`);
+  dbWatchdog();
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('[unhandledRejection]', err);
 });
