@@ -173,6 +173,98 @@
     border: 2px solid var(--sand);
   }
 
+  /* Target profile / Guest of Honor */
+  .target {
+    padding: 22px 18px 24px;
+    background: var(--ink);
+    color: var(--sand);
+    border-bottom: 3px double var(--sand);
+    text-align: center;
+  }
+  .target-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 3px;
+    color: var(--sand);
+    opacity: 0.65;
+    margin-bottom: 14px;
+  }
+  .target-photo-wrap {
+    position: relative;
+    padding: 4px;
+    background: var(--sand);
+    margin: 0 auto 4px;
+    max-width: 340px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .target-photo-wrap img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .target-photo-wrap::before,
+  .target-photo-wrap::after {
+    content: "";
+    position: absolute;
+    width: 28px; height: 28px;
+    border: 3px solid var(--classified);
+    pointer-events: none;
+  }
+  .target-photo-wrap::before {
+    top: -10px; left: -10px;
+    border-right: none; border-bottom: none;
+  }
+  .target-photo-wrap::after {
+    bottom: -10px; right: -10px;
+    border-left: none; border-top: none;
+  }
+  .codename {
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 42px;
+    letter-spacing: 4px;
+    color: var(--sand);
+    margin-top: 22px;
+    line-height: 1;
+    text-shadow: 2px 2px 0 var(--classified);
+  }
+  .callsign {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--sand);
+    opacity: 0.7;
+    margin-top: 8px;
+    margin-bottom: 16px;
+  }
+  .target-data {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    text-align: left;
+    max-width: 360px;
+    margin: 0 auto;
+  }
+  .target-data .row {
+    background: rgba(217,200,149,0.08);
+    border-left: 3px solid var(--classified);
+    padding: 8px 10px;
+  }
+  .target-data .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--sand);
+    opacity: 0.55;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .target-data .val {
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 14px;
+    color: var(--sand);
+    letter-spacing: 1px;
+  }
+
   /* Sections */
   .section {
     padding: 20px 18px;
@@ -536,6 +628,22 @@
     <div class="dossier-num">DOSSIER № 12 — ELIKAI / 12TH BIRTHDAY</div>
     <div class="greeting">
       Parent of a future combatant — your recruit has been selected for participation in <strong>Operation Hydro Strike</strong>. Review the briefing below and confirm deployment.
+    </div>
+  </div>
+
+  <!-- TARGET PROFILE / GUEST OF HONOR -->
+  <div class="target">
+    <div class="target-tag">// SUBJECT DOSSIER · GUEST OF HONOR //</div>
+    <div class="target-photo-wrap">
+      <img src="/elikai.jpg" alt="Elikai — Birthday Combatant">
+    </div>
+    <div class="codename">ELIKAI</div>
+    <div class="callsign">▸ CALLSIGN: "PRODIGY" ◂</div>
+    <div class="target-data">
+      <div class="row"><span class="lbl">STATUS</span><span class="val">BIRTHDAY KID</span></div>
+      <div class="row"><span class="lbl">AGE</span><span class="val">TURNING 12</span></div>
+      <div class="row"><span class="lbl">RANK</span><span class="val">CHAMPION</span></div>
+      <div class="row"><span class="lbl">SPECIALTY</span><span class="val">HYDRO COMBAT</span></div>
     </div>
   </div>
 
