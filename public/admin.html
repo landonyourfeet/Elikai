@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HYDRO CMD :: Roster</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Black+Ops+One&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #111721;
+    --panel-2: #1a2230;
+    --border: #2a3444;
+    --text: #c8d3e0;
+    --text-dim: #6b7a8f;
+    --cyan: #00d9ff;
+    --green: #00ff88;
+    --purple: #a780ff;
+    --red: #ff4757;
+    --blue-sq: #3b82f6;
+    --red-sq: #ef4444;
+    --gold: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    background-image:
+      linear-gradient(rgba(0,217,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,217,255,0.025) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .shell { max-width: 1280px; margin: 0 auto; padding: 18px; }
+
+  .head {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 16px 18px;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .head h1 {
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 22px;
+    color: var(--cyan);
+    letter-spacing: 2px;
+  }
+  .head .sub {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    margin-top: 4px;
+  }
+  .live {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 1px;
+  }
+  .live .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 12px var(--green);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .stat {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 14px 16px;
+    position: relative;
+  }
+  .stat .lbl {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .stat .val {
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 32px;
+    color: var(--cyan);
+    line-height: 1;
+  }
+  .stat.green .val { color: var(--green); }
+  .stat.purple .val { color: var(--purple); }
+  .stat.gold .val { color: var(--gold); }
+  .stat.blue .val { color: var(--blue-sq); }
+  .stat.red .val { color: var(--red-sq); }
+  .stat.dim .val { color: var(--text-dim); }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .toolbar input {
+    flex: 1;
+    min-width: 220px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    border-radius: 0;
+  }
+  .toolbar input:focus { outline: 1px solid var(--cyan); border-color: var(--cyan); }
+  .btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+  .roster {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 900px; }
+  th {
+    background: var(--panel-2);
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+    vertical-align: top;
+  }
+  tr:hover td { background: rgba(0,217,255,0.04); }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .tag.yes    { color: var(--green);    border-color: var(--green); }
+  .tag.maybe  { color: var(--gold);     border-color: var(--gold); }
+  .tag.no     { color: var(--red);      border-color: var(--red); }
+  .tag.blue   { color: var(--blue-sq);  border-color: var(--blue-sq); }
+  .tag.red    { color: var(--red-sq);   border-color: var(--red-sq); }
+  .tag.either { color: var(--text-dim); border-color: var(--text-dim); }
+
+  .del {
+    background: transparent;
+    border: 1px solid var(--red);
+    color: var(--red);
+    padding: 4px 10px;
+    font-size: 10px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    font-family: inherit;
+  }
+  .del:hover { background: var(--red); color: white; }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+  }
+  .empty .big {
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 22px;
+    color: var(--text);
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+  }
+
+  .gate {
+    max-width: 380px;
+    margin: 80px auto;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 32px;
+    text-align: center;
+  }
+  .gate h1 {
+    font-family: 'Black Ops One', sans-serif;
+    color: var(--red);
+    margin-bottom: 14px;
+    letter-spacing: 2px;
+    font-size: 22px;
+  }
+  .gate p {
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-bottom: 18px;
+    letter-spacing: 1px;
+  }
+  .gate input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px;
+    font-family: inherit;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+  .gate input:focus { outline: 1px solid var(--cyan); border-color: var(--cyan); }
+  .gate button {
+    width: 100%;
+    background: var(--cyan);
+    color: var(--bg);
+    border: none;
+    padding: 12px;
+    font-family: 'Black Ops One', sans-serif;
+    letter-spacing: 2px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .gate .err {
+    color: var(--red);
+    font-size: 11px;
+    margin-top: 8px;
+    min-height: 14px;
+  }
+
+  .muted { color: var(--text-dim); }
+  .notes-cell { font-size: 11px; color: var(--text-dim); max-width: 200px; line-height: 1.4; }
+  .id-cell { font-family: 'JetBrains Mono', monospace; color: var(--cyan); }
+</style>
+</head>
+<body>
+
+<div id="gate" class="gate" style="display:none">
+  <h1>// AUTH REQUIRED //</h1>
+  <p>ENTER ADMIN KEY TO ACCESS ROSTER</p>
+  <input type="password" id="keyInput" placeholder="admin key" autofocus>
+  <button onclick="enterKey()">▶ ACCESS</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<div id="app" class="shell" style="display:none">
+  <div class="head">
+    <div>
+      <h1>HYDRO CMD :: ROSTER</h1>
+      <div class="sub">// OPERATION HYDRO STRIKE — ELIKAI'S 12TH BIRTHDAY</div>
+    </div>
+    <div class="live"><span class="dot"></span> LIVE FEED</div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input type="text" id="search" placeholder="// search recruits, parents, notes...">
+    <button class="btn" onclick="loadRoster()">⟳ REFRESH</button>
+    <button class="btn" onclick="exportCSV()">↓ EXPORT CSV</button>
+    <button class="btn" onclick="logout()">⏻ LOGOUT</button>
+  </div>
+
+  <div class="roster">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>RECRUIT(S)</th>
+          <th>PARENT</th>
+          <th>PHONE</th>
+          <th>STATUS</th>
+          <th>SQUAD</th>
+          <th>KIDS</th>
+          <th>ALLERGIES</th>
+          <th>NOTES</th>
+          <th>RECEIVED</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rosterBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let ADMIN_KEY = new URLSearchParams(location.search).get('key') || sessionStorage.getItem('hydro_key') || '';
+let allRsvps = [];
+
+function enterKey() {
+  const k = document.getElementById('keyInput').value.trim();
+  if (!k) return;
+  ADMIN_KEY = k;
+  sessionStorage.setItem('hydro_key', k);
+  document.getElementById('gateErr').textContent = '';
+  loadRoster();
+}
+
+function logout() {
+  sessionStorage.removeItem('hydro_key');
+  ADMIN_KEY = '';
+  location.href = '/admin';
+}
+
+async function loadRoster() {
+  if (!ADMIN_KEY) {
+    showGate();
+    return;
+  }
+  try {
+    const res = await fetch('/api/rsvps?key=' + encodeURIComponent(ADMIN_KEY));
+    if (res.status === 401) {
+      sessionStorage.removeItem('hydro_key');
+      ADMIN_KEY = '';
+      showGate('!! invalid key — denied //');
+      return;
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('gate').style.display = 'none';
+    renderStats(data.stats);
+    allRsvps = data.rsvps;
+    renderRoster(allRsvps);
+  } catch (err) {
+    alert('Load failed: ' + err.message);
+  }
+}
+
+function showGate(errMsg) {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('gate').style.display = 'block';
+  if (errMsg) document.getElementById('gateErr').textContent = errMsg;
+  setTimeout(() => document.getElementById('keyInput').focus(), 50);
+}
+
+function renderStats(s) {
+  document.getElementById('stats').innerHTML = `
+    <div class="stat green"><div class="lbl">CONFIRMED</div><div class="val">${s.yes}</div></div>
+    <div class="stat gold"><div class="lbl">MAYBE</div><div class="val">${s.maybe}</div></div>
+    <div class="stat dim"><div class="lbl">CAN'T MAKE IT</div><div class="val">${s.no}</div></div>
+    <div class="stat purple"><div class="lbl">TOTAL KIDS</div><div class="val">${s.total_kids}</div></div>
+    <div class="stat blue"><div class="lbl">BLUE SQUAD</div><div class="val">${s.blue_squad}</div></div>
+    <div class="stat red"><div class="lbl">RED SQUAD</div><div class="val">${s.red_squad}</div></div>
+    <div class="stat"><div class="lbl">NO PREFERENCE</div><div class="val">${s.no_pref}</div></div>
+  `;
+}
+
+function renderRoster(rows) {
+  const body = document.getElementById('rosterBody');
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="11"><div class="empty"><div class="big">// NO RECRUITS YET //</div><div>roster will populate as RSVPs come in</div></div></td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r => {
+    const att = (r.attending || 'YES').toLowerCase();
+    const sq = (r.squad_preference || 'EITHER').toLowerCase();
+    const dt = new Date(r.created_at);
+    const when = dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return `<tr>
+      <td class="id-cell">#${String(r.id).padStart(4,'0')}</td>
+      <td><strong>${esc(r.kid_names)}</strong></td>
+      <td>${esc(r.parent_name)}<div class="notes-cell">${esc(r.parent_email||'')}</div></td>
+      <td class="muted">${esc(r.parent_phone||'—')}</td>
+      <td><span class="tag ${att}">${esc(r.attending||'YES')}</span></td>
+      <td><span class="tag ${sq}">${esc(r.squad_preference||'EITHER')}</span></td>
+      <td>${r.kid_count||1}</td>
+      <td class="notes-cell">${esc(r.allergies||'—')}</td>
+      <td class="notes-cell">${esc(r.notes||'—')}</td>
+      <td class="muted" style="font-size:10px;white-space:nowrap">${when}</td>
+      <td><button class="del" onclick="del(${r.id})">DEL</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function del(id) {
+  if (!confirm('Remove RSVP #' + id + '?')) return;
+  await fetch('/api/rsvp/' + id + '?key=' + encodeURIComponent(ADMIN_KEY), { method: 'DELETE' });
+  loadRoster();
+}
+
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  if (!q) return renderRoster(allRsvps);
+  renderRoster(allRsvps.filter(r => JSON.stringify(r).toLowerCase().includes(q)));
+});
+
+function exportCSV() {
+  if (!allRsvps.length) return alert('No data to export');
+  const cols = ['id','parent_name','parent_phone','parent_email','kid_names','kid_count','attending','squad_preference','allergies','notes','created_at'];
+  const csv = [cols.join(',')].concat(
+    allRsvps.map(r => cols.map(c => `"${String(r[c]==null?'':r[c]).replace(/"/g,'""')}"`).join(','))
+  ).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'hydro-strike-roster.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('keyInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') enterKey();
+});
+
+// Auto-refresh every 30s
+setInterval(loadRoster, 30000);
+
+if (ADMIN_KEY) loadRoster();
+else showGate();
+</script>
+</body>
+</html>
