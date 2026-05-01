@@ -153,7 +153,122 @@
     line-height: 1.5;
   }
 
-  /* Date stamp on header */
+  /* Live recruit counter — social proof */
+  .live-counter {
+    background: var(--ink);
+    color: var(--sand);
+    padding: 18px 16px 20px;
+    text-align: center;
+    border-bottom: 3px double var(--sand);
+    position: relative;
+  }
+  .live-counter .pulse {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--sand);
+    opacity: 0.7;
+    margin-bottom: 10px;
+  }
+  .live-counter .pulse .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 10px #22c55e;
+    animation: pulseDot 1.5s infinite;
+  }
+  @keyframes pulseDot { 50% { opacity: 0.3; } }
+
+  .counter-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    max-width: 360px;
+    margin: 0 auto;
+  }
+  .counter-cell {
+    background: rgba(217,200,149,0.08);
+    border: 1px solid var(--sand);
+    padding: 12px 8px;
+  }
+  .counter-cell .num {
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 38px;
+    color: var(--classified);
+    line-height: 1;
+    text-shadow: 0 0 10px rgba(184,49,42,0.5);
+    transition: transform 0.3s ease;
+  }
+  .counter-cell .num.bump {
+    transform: scale(1.2);
+  }
+  .counter-cell .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--sand);
+    opacity: 0.65;
+    margin-top: 4px;
+  }
+  .counter-cta {
+    font-family: 'Special Elite', monospace;
+    font-size: 12px;
+    color: var(--sand);
+    opacity: 0.7;
+    margin-top: 12px;
+  }
+
+  /* Squad roster — confirmed names */
+  .roster-strip {
+    background: var(--ink);
+    color: var(--sand);
+    padding: 0 16px 22px;
+    border-bottom: 3px double var(--sand);
+    text-align: center;
+  }
+  .roster-strip.empty { display: none; }
+  .roster-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--sand);
+    opacity: 0.7;
+    margin-bottom: 12px;
+    padding-top: 4px;
+  }
+  .roster-names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+  .name-pill {
+    display: inline-block;
+    padding: 6px 12px;
+    border: 1px solid var(--sand);
+    background: rgba(217,200,149,0.06);
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: var(--sand);
+    transition: opacity 0.4s ease, transform 0.3s ease;
+  }
+  .name-pill.fresh {
+    animation: pillIn 0.5s ease;
+  }
+  @keyframes pillIn {
+    from { opacity: 0; transform: scale(0.7); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .name-pill .check {
+    color: #22c55e;
+    margin-right: 4px;
+    font-family: 'Oswald', sans-serif;
+    font-weight: bold;
+  }
   .date-stamp {
     display: inline-block;
     border: 3px double var(--classified);
@@ -519,6 +634,26 @@
     </div>
   </div>
 
+  <div class="live-counter">
+    <div class="pulse"><span class="dot"></span> LIVE RECRUITMENT FEED</div>
+    <div class="counter-row">
+      <div class="counter-cell">
+        <div class="num" id="kidCount">—</div>
+        <div class="lbl">RECRUITS CONFIRMED</div>
+      </div>
+      <div class="counter-cell">
+        <div class="num" id="famCount">—</div>
+        <div class="lbl">FAMILIES</div>
+      </div>
+    </div>
+    <div class="counter-cta">Roster updates as RSVPs come in. Lock yours in below.</div>
+  </div>
+
+  <div class="roster-strip empty" id="rosterStrip">
+    <div class="roster-label">// SQUAD ROSTER · CONFIRMED RECRUITS //</div>
+    <div class="roster-names" id="rosterNames"></div>
+  </div>
+
   <div class="target">
     <div class="target-tag">// SUBJECT DOSSIER · GUEST OF HONOR //</div>
     <div class="target-photo-wrap">
@@ -694,6 +829,83 @@
 
 <script>
 (function(){
+  // === LIVE RECRUIT COUNTER + ROSTER ===
+  const kidEl = document.getElementById('kidCount');
+  const famEl = document.getElementById('famCount');
+  const rosterStrip = document.getElementById('rosterStrip');
+  const rosterNamesEl = document.getElementById('rosterNames');
+  let knownNames = new Set();
+  let firstLoad = true;
+
+  function animateNum(el, target) {
+    const current = parseInt(el.textContent) || 0;
+    if (current === target) return;
+    const steps = Math.min(20, Math.max(8, Math.abs(target - current)));
+    const stepSize = (target - current) / steps;
+    let i = 0;
+    const tick = setInterval(() => {
+      i++;
+      const v = i >= steps ? target : Math.round(current + stepSize * i);
+      el.textContent = v;
+      if (i >= steps) {
+        clearInterval(tick);
+        el.classList.add('bump');
+        setTimeout(() => el.classList.remove('bump'), 350);
+      }
+    }, 35);
+  }
+
+  function renderRoster(names) {
+    if (!names || !names.length) {
+      rosterStrip.classList.add('empty');
+      return;
+    }
+    rosterStrip.classList.remove('empty');
+
+    // Dedupe but preserve order (first occurrence wins)
+    const seen = new Set();
+    const ordered = [];
+    for (const n of names) {
+      const k = n.toLowerCase();
+      if (!seen.has(k)) {
+        seen.add(k);
+        ordered.push(n);
+      }
+    }
+
+    // Find which names are new since last poll
+    const fresh = new Set();
+    for (const n of ordered) {
+      if (!knownNames.has(n.toLowerCase())) fresh.add(n.toLowerCase());
+    }
+
+    rosterNamesEl.innerHTML = ordered.map(n => {
+      const isFresh = fresh.has(n.toLowerCase()) && !firstLoad;
+      const isFirstLoad = firstLoad;
+      return `<span class="name-pill ${isFresh || isFirstLoad ? 'fresh' : ''}"><span class="check">✓</span>${escapeHTML(n)}</span>`;
+    }).join('');
+
+    // Update known set
+    knownNames = new Set(ordered.map(n => n.toLowerCase()));
+    firstLoad = false;
+  }
+
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function loadCounter() {
+    try {
+      const r = await fetch('/api/public-stats', { cache: 'no-cache' });
+      if (!r.ok) return;
+      const d = await r.json();
+      animateNum(kidEl, d.confirmed_kids || 0);
+      animateNum(famEl, d.confirmed_families || 0);
+      renderRoster(d.kid_names || []);
+    } catch (e) {}
+  }
+  loadCounter();
+  setInterval(loadCounter, 30000);
   const form = document.getElementById('rsvpForm');
   const enlistSection = document.getElementById('enlistSection');
   const successCard = document.getElementById('successCard');
@@ -728,6 +940,8 @@
       enlistSection.style.display = 'none';
       successCard.classList.add('show');
       successCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Refresh public counter so they see their RSVP added
+      loadCounter();
     } catch (err) {
       errorMsg.textContent = '!! ' + err.message + ' — please retry transmission';
       errorMsg.classList.add('show');
