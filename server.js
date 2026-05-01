@@ -309,6 +309,29 @@ app.delete('/api/rsvp/:id', checkAdmin, requireDB, async (req, res) => {
   }
 });
 
+// ----- Admin: reassign squad on an RSVP -----
+app.patch('/api/rsvp/:id/squad', checkAdmin, requireDB, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id) || 0;
+    const squad = (req.body && req.body.squad || '').toString().toUpperCase();
+    if (!['BLUE', 'RED', 'EITHER'].includes(squad)) {
+      return res.status(400).json({ error: 'squad must be BLUE, RED, or EITHER' });
+    }
+    const result = await pool.query(
+      `UPDATE rsvps SET squad_preference = $1 WHERE id = $2 RETURNING id, kid_names, squad_preference`,
+      [squad, id]
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'RSVP not found' });
+    }
+    console.log(`[SQUAD] #${id} → ${squad} (${result.rows[0].kid_names})`);
+    res.json({ ok: true, rsvp: result.rows[0] });
+  } catch (err) {
+    console.error('[squad reassign]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ----- Boot: HTTP first, DB connects in background -----
 app.listen(PORT, () => {
   console.log(`╔════════════════════════════════════════════╗`);
