@@ -246,7 +246,8 @@
     justify-content: center;
   }
   .name-pill {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     padding: 6px 12px;
     border: 1px solid var(--sand);
     background: rgba(217,200,149,0.06);
@@ -255,6 +256,7 @@
     letter-spacing: 1.5px;
     color: var(--sand);
     transition: opacity 0.4s ease, transform 0.3s ease;
+    gap: 6px;
   }
   .name-pill.fresh {
     animation: pillIn 0.5s ease;
@@ -263,12 +265,52 @@
     from { opacity: 0; transform: scale(0.7); }
     to   { opacity: 1; transform: scale(1); }
   }
-  .name-pill .check {
-    color: #22c55e;
-    margin-right: 4px;
-    font-family: 'Oswald', sans-serif;
-    font-weight: bold;
+  .name-pill .squad-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
+  /* Blue Squad */
+  .name-pill.blue {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: white;
+  }
+  .name-pill.blue .squad-dot { background: #7dd3fc; box-shadow: 0 0 6px #7dd3fc; }
+  /* Red Squad */
+  .name-pill.red {
+    background: var(--red);
+    border-color: var(--red);
+    color: white;
+  }
+  .name-pill.red .squad-dot { background: #fca5a5; box-shadow: 0 0 6px #fca5a5; }
+  /* Either / Unassigned */
+  .name-pill.either .squad-dot {
+    background: var(--sand);
+    opacity: 0.5;
+  }
+
+  /* Squad section headers in roster */
+  .roster-group {
+    margin-bottom: 10px;
+  }
+  .roster-group:last-child { margin-bottom: 0; }
+  .roster-group .group-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2.5px;
+    color: var(--sand);
+    opacity: 0.55;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .roster-group.blue .group-label { color: #7dd3fc; opacity: 0.9; }
+  .roster-group.red .group-label  { color: #fca5a5; opacity: 0.9; }
   .date-stamp {
     display: inline-block;
     border: 3px double var(--classified);
@@ -855,38 +897,67 @@
     }, 35);
   }
 
-  function renderRoster(names) {
-    if (!names || !names.length) {
+  function renderRoster(recruits) {
+    if (!recruits || !recruits.length) {
       rosterStrip.classList.add('empty');
       return;
     }
     rosterStrip.classList.remove('empty');
 
-    // Dedupe but preserve order (first occurrence wins)
+    // Dedupe by name+squad (preserve order)
     const seen = new Set();
     const ordered = [];
-    for (const n of names) {
-      const k = n.toLowerCase();
+    for (const r of recruits) {
+      const k = (r.name + '|' + r.squad).toLowerCase();
       if (!seen.has(k)) {
         seen.add(k);
-        ordered.push(n);
+        ordered.push(r);
       }
     }
 
     // Find which names are new since last poll
     const fresh = new Set();
-    for (const n of ordered) {
-      if (!knownNames.has(n.toLowerCase())) fresh.add(n.toLowerCase());
+    for (const r of ordered) {
+      const k = (r.name + '|' + r.squad).toLowerCase();
+      if (!knownNames.has(k)) fresh.add(k);
     }
 
-    rosterNamesEl.innerHTML = ordered.map(n => {
-      const isFresh = fresh.has(n.toLowerCase()) && !firstLoad;
-      const isFirstLoad = firstLoad;
-      return `<span class="name-pill ${isFresh || isFirstLoad ? 'fresh' : ''}"><span class="check">✓</span>${escapeHTML(n)}</span>`;
+    // Group by squad
+    const blue = ordered.filter(r => r.squad === 'BLUE');
+    const red = ordered.filter(r => r.squad === 'RED');
+    const either = ordered.filter(r => r.squad !== 'BLUE' && r.squad !== 'RED');
+
+    const buildPills = (list, squadClass) => list.map(r => {
+      const k = (r.name + '|' + r.squad).toLowerCase();
+      const isFresh = fresh.has(k) && !firstLoad;
+      const animateClass = (isFresh || firstLoad) ? 'fresh' : '';
+      return `<span class="name-pill ${squadClass} ${animateClass}"><span class="squad-dot"></span>${escapeHTML(r.name)}</span>`;
     }).join('');
 
+    let html = '';
+    if (blue.length) {
+      html += `<div class="roster-group blue">
+        <div class="group-label">◆ BLUE SQUAD · ${blue.length} ◆</div>
+        <div class="roster-names">${buildPills(blue, 'blue')}</div>
+      </div>`;
+    }
+    if (red.length) {
+      html += `<div class="roster-group red">
+        <div class="group-label">◆ RED SQUAD · ${red.length} ◆</div>
+        <div class="roster-names">${buildPills(red, 'red')}</div>
+      </div>`;
+    }
+    if (either.length) {
+      html += `<div class="roster-group">
+        <div class="group-label">◆ EITHER SQUAD · ${either.length} ◆</div>
+        <div class="roster-names">${buildPills(either, 'either')}</div>
+      </div>`;
+    }
+
+    rosterNamesEl.innerHTML = html;
+
     // Update known set
-    knownNames = new Set(ordered.map(n => n.toLowerCase()));
+    knownNames = new Set(ordered.map(r => (r.name + '|' + r.squad).toLowerCase()));
     firstLoad = false;
   }
 
@@ -901,7 +972,11 @@
       const d = await r.json();
       animateNum(kidEl, d.confirmed_kids || 0);
       animateNum(famEl, d.confirmed_families || 0);
-      renderRoster(d.kid_names || []);
+      // Prefer new recruits[] format; fall back to kid_names[] if older API
+      const recruits = d.recruits && d.recruits.length
+        ? d.recruits
+        : (d.kid_names || []).map(n => ({ name: n, squad: 'EITHER' }));
+      renderRoster(recruits);
     } catch (e) {}
   }
   loadCounter();
