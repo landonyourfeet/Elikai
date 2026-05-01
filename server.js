@@ -57,8 +57,20 @@ async function initDB() {
         created_at       TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS visits (
+        id SERIAL PRIMARY KEY,
+        ip          TEXT,
+        user_agent  TEXT,
+        referrer    TEXT,
+        path        TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_visits_created ON visits(created_at);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_visits_ip ON visits(ip);`);
     dbReady = true;
-    console.log('[DB] rsvps table ready ✓');
+    console.log('[DB] tables ready ✓ (rsvps + visits)');
     return true;
   } catch (err) {
     dbReady = false;
@@ -101,7 +113,7 @@ function requireDB(req, res, next) {
   next();
 }
 
-// ----- Public RSVP page (with OG meta injection) -----
+// ----- Public RSVP page (with OG meta injection + visit logging) -----
 app.get('/', (req, res) => {
   try {
     const base = getBaseUrl(req);
@@ -110,9 +122,66 @@ app.get('/', (req, res) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Cache-Control', 'public, max-age=300');
     res.send(html);
+
+    // Fire-and-forget visit log. Skip obvious bots / link-preview crawlers
+    // so the count reflects real human eyeballs.
+    if (dbReady && pool) {
+      const ua = (req.headers['user-agent'] || '').toLowerCase();
+      const isBot = /bot|crawler|spider|facebookexternalhit|whatsapp|slackbot|telegram|discordbot|twitterbot|linkedinbot|preview|fetch|curl|wget|node-fetch|axios|python-requests|headlesschrome|googlebot|bingbot/.test(ua);
+      if (!isBot) {
+        const ip = (req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim();
+        pool.query(
+          `INSERT INTO visits (ip, user_agent, referrer, path) VALUES ($1,$2,$3,$4)`,
+          [ip, (req.headers['user-agent'] || '').slice(0, 250), (req.headers.referer || '').slice(0, 250), '/']
+        ).catch(err => console.error('[visit log]', err.message));
+      }
+    }
   } catch (err) {
     console.error('[/] error', err);
     res.status(500).send('Server error');
+  }
+});
+
+// ----- Public stats endpoint — for the live counter on the page -----
+app.get('/api/public-stats', async (req, res) => {
+  try {
+    if (!dbReady) return res.json({ confirmed_kids: 0, confirmed_families: 0, kid_names: [] });
+    const r = await pool.query(
+      `SELECT COALESCE(SUM(kid_count), 0)::int AS kids,
+              COUNT(*)::int AS families
+         FROM rsvps WHERE attending = 'YES'`
+    );
+    // Pull kid_names of confirmed RSVPs, oldest first so order is stable
+    const namesRes = await pool.query(
+      `SELECT kid_names FROM rsvps WHERE attending = 'YES' ORDER BY created_at ASC`
+    );
+
+    // Parse out first names. kid_names field may be "Jackson + Mia", "Jackson, Mia", "Jackson and Mia", etc.
+    const firstNames = [];
+    for (const row of namesRes.rows) {
+      const raw = (row.kid_names || '').toString();
+      // Split on common separators
+      const parts = raw.split(/[+,&]|\band\b|\bw\/\b|\b\+\b|\//i);
+      for (const p of parts) {
+        // Take the first word as first name
+        const cleaned = p.trim().split(/\s+/)[0];
+        if (cleaned && cleaned.length >= 2 && cleaned.length <= 20 && /^[A-Za-z][A-Za-z'\-]*$/.test(cleaned)) {
+          // Title-case it
+          const tc = cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
+          firstNames.push(tc);
+        }
+      }
+    }
+
+    res.set('Cache-Control', 'public, max-age=30');
+    res.json({
+      confirmed_kids: r.rows[0].kids || 0,
+      confirmed_families: r.rows[0].families || 0,
+      kid_names: firstNames
+    });
+  } catch (err) {
+    console.error('[/api/public-stats]', err);
+    res.json({ confirmed_kids: 0, confirmed_families: 0, kid_names: [] });
   }
 });
 
@@ -187,12 +256,25 @@ app.post('/api/rsvp', requireDB, async (req, res) => {
   }
 });
 
-// ----- Admin: list roster + stats -----
+// ----- Admin: list roster + stats + traffic -----
 app.get('/api/rsvps', checkAdmin, requireDB, async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM rsvps ORDER BY created_at DESC`);
     const rows = result.rows;
     const yes = rows.filter(r => r.attending === 'YES');
+
+    // Traffic stats
+    const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM visits`);
+    const uniqueVisits = await pool.query(`SELECT COUNT(DISTINCT ip)::int AS c FROM visits WHERE ip IS NOT NULL AND ip <> ''`);
+    const last24h = await pool.query(`SELECT COUNT(*)::int AS c FROM visits WHERE created_at > NOW() - INTERVAL '24 hours'`);
+    const lastHour = await pool.query(`SELECT COUNT(*)::int AS c FROM visits WHERE created_at > NOW() - INTERVAL '1 hour'`);
+
+    // Conversion: unique visitors who became RSVPs
+    const visitorCount = uniqueVisits.rows[0].c || 0;
+    const conversionPct = visitorCount > 0
+      ? Math.round((yes.length / visitorCount) * 1000) / 10
+      : 0;
+
     const stats = {
       total_rsvps: rows.length,
       yes: yes.length,
@@ -201,7 +283,13 @@ app.get('/api/rsvps', checkAdmin, requireDB, async (req, res) => {
       blue_squad: yes.filter(r => r.squad_preference === 'BLUE').length,
       red_squad: yes.filter(r => r.squad_preference === 'RED').length,
       no_pref: yes.filter(r => !r.squad_preference || r.squad_preference === 'EITHER').length,
-      total_kids: yes.reduce((sum, r) => sum + (r.kid_count || 1), 0)
+      total_kids: yes.reduce((sum, r) => sum + (r.kid_count || 1), 0),
+      // Traffic
+      page_views: totalVisits.rows[0].c || 0,
+      unique_visitors: visitorCount,
+      visits_24h: last24h.rows[0].c || 0,
+      visits_1h: lastHour.rows[0].c || 0,
+      conversion_pct: conversionPct
     };
     res.json({ stats, rsvps: rows });
   } catch (err) {
