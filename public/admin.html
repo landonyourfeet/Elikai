@@ -178,6 +178,43 @@
   .tag.red    { color: var(--red-sq);   border-color: var(--red-sq); }
   .tag.either { color: var(--text-dim); border-color: var(--text-dim); }
 
+  /* Squad picker — 3-segment toggle */
+  .squad-picker {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .squad-picker button {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 4px 10px;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    transition: all 0.12s;
+    border-right: 1px solid var(--border);
+  }
+  .squad-picker button:last-child { border-right: none; }
+  .squad-picker button:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .squad-picker button.active.blue {
+    background: var(--blue-sq);
+    color: white;
+  }
+  .squad-picker button.active.red {
+    background: var(--red-sq);
+    color: white;
+  }
+  .squad-picker button.active.either {
+    background: var(--text-dim);
+    color: var(--bg);
+  }
+  .squad-picker button.saving {
+    opacity: 0.5;
+    cursor: wait;
+  }
+
   .del {
     background: transparent;
     border: 1px solid var(--red);
@@ -368,6 +405,11 @@ function renderStats(s) {
     <div class="stat blue"><div class="lbl">BLUE SQUAD</div><div class="val">${s.blue_squad}</div></div>
     <div class="stat red"><div class="lbl">RED SQUAD</div><div class="val">${s.red_squad}</div></div>
     <div class="stat"><div class="lbl">NO PREFERENCE</div><div class="val">${s.no_pref}</div></div>
+    <div class="stat"><div class="lbl">PAGE VIEWS</div><div class="val">${s.page_views || 0}</div></div>
+    <div class="stat purple"><div class="lbl">UNIQUE VISITORS</div><div class="val">${s.unique_visitors || 0}</div></div>
+    <div class="stat green"><div class="lbl">VIEWS · 24H</div><div class="val">${s.visits_24h || 0}</div></div>
+    <div class="stat gold"><div class="lbl">VIEWS · 1H</div><div class="val">${s.visits_1h || 0}</div></div>
+    <div class="stat dim"><div class="lbl">CONVERSION %</div><div class="val">${s.conversion_pct || 0}</div></div>
   `;
 }
 
@@ -379,16 +421,21 @@ function renderRoster(rows) {
   }
   body.innerHTML = rows.map(r => {
     const att = (r.attending || 'YES').toLowerCase();
-    const sq = (r.squad_preference || 'EITHER').toLowerCase();
+    const sq = (r.squad_preference || 'EITHER').toUpperCase();
     const dt = new Date(r.created_at);
     const when = dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const squadPicker = `<div class="squad-picker" data-rsvp-id="${r.id}">
+      <button class="${sq === 'BLUE' ? 'active blue' : ''}" data-squad="BLUE">BLUE</button>
+      <button class="${sq === 'RED' ? 'active red' : ''}" data-squad="RED">RED</button>
+      <button class="${sq === 'EITHER' ? 'active either' : ''}" data-squad="EITHER">EITHER</button>
+    </div>`;
     return `<tr>
       <td class="id-cell">#${String(r.id).padStart(4,'0')}</td>
       <td><strong>${esc(r.kid_names)}</strong></td>
       <td>${esc(r.parent_name)}<div class="notes-cell">${esc(r.parent_email||'')}</div></td>
       <td class="muted">${esc(r.parent_phone||'—')}</td>
       <td><span class="tag ${att}">${esc(r.attending||'YES')}</span></td>
-      <td><span class="tag ${sq}">${esc(r.squad_preference||'EITHER')}</span></td>
+      <td>${squadPicker}</td>
       <td>${r.kid_count||1}</td>
       <td class="notes-cell">${esc(r.allergies||'—')}</td>
       <td class="notes-cell">${esc(r.notes||'—')}</td>
@@ -396,6 +443,42 @@ function renderRoster(rows) {
       <td><button class="del" onclick="del(${r.id})">DEL</button></td>
     </tr>`;
   }).join('');
+
+  // Wire squad pickers via event delegation
+  body.querySelectorAll('.squad-picker').forEach(picker => {
+    picker.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button');
+      if (!btn || btn.classList.contains('active')) return;
+      const id = picker.dataset.rsvpId;
+      const newSquad = btn.dataset.squad;
+      // Optimistic UI
+      picker.querySelectorAll('button').forEach(b => {
+        b.classList.remove('active', 'blue', 'red', 'either');
+        b.classList.add('saving');
+      });
+      btn.classList.add('active', newSquad.toLowerCase());
+      try {
+        const res = await fetch('/api/rsvp/' + id + '/squad?key=' + encodeURIComponent(ADMIN_KEY), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ squad: newSquad })
+        });
+        if (!res.ok) throw new Error('reassign failed');
+        // Refresh stats so squad counts update; preserve search/scroll
+        const result = await fetch('/api/rsvps?key=' + encodeURIComponent(ADMIN_KEY));
+        if (result.ok) {
+          const data = await result.json();
+          renderStats(data.stats);
+          allRsvps = data.rsvps;
+        }
+      } catch (err) {
+        alert('Failed to update squad: ' + err.message);
+        loadRoster();
+      } finally {
+        picker.querySelectorAll('button').forEach(b => b.classList.remove('saving'));
+      }
+    });
+  });
 }
 
 function esc(s) {
