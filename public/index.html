@@ -153,7 +153,93 @@
     line-height: 1.5;
   }
 
-  /* Live recruit counter — social proof */
+  /* ============== ALERT BANNER ============== */
+  /* Flashing military hazard banner pinned to top — get parents to scroll/tap */
+  .alert-banner {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    display: block;
+    -webkit-appearance: none;
+    border-radius: 0;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    /* Diagonal hazard stripes background */
+    background: repeating-linear-gradient(
+      -45deg,
+      #f5c518 0,
+      #f5c518 14px,
+      #1a1a14 14px,
+      #1a1a14 28px
+    );
+    animation: hazardSlide 1.2s linear infinite;
+    overflow: hidden;
+  }
+  @keyframes hazardSlide {
+    from { background-position: 0 0; }
+    to   { background-position: 40px 0; }
+  }
+  .alert-banner-inner {
+    background: rgba(0,0,0,0.78);
+    margin: 4px;
+    padding: 11px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .alert-banner-text {
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 15px;
+    letter-spacing: 2.5px;
+    color: #ffeb3b;
+    text-shadow: 0 0 8px rgba(255,235,59,0.6);
+    animation: alertFlash 0.85s steps(2) infinite;
+    white-space: nowrap;
+  }
+  @keyframes alertFlash {
+    0%, 49%   { color: #ff1744; text-shadow: 0 0 12px rgba(255,23,68,0.85); }
+    50%, 100% { color: #ffeb3b; text-shadow: 0 0 8px rgba(255,235,59,0.6); }
+  }
+  .alert-banner-icon {
+    font-size: 16px;
+    animation: alertSpin 1.6s linear infinite;
+    display: inline-block;
+  }
+  @keyframes alertSpin {
+    0%, 100% { transform: rotate(0deg); }
+    50%      { transform: rotate(20deg); }
+  }
+  .alert-banner-arrow {
+    font-size: 14px;
+    color: #ffeb3b;
+    animation: alertBounce 0.8s ease-in-out infinite;
+  }
+  @keyframes alertBounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(3px); }
+  }
+  /* Hide banner once form section is in viewport */
+  .alert-banner.dismissed {
+    display: none;
+  }
+  /* Reduced-motion: no animations, but still visible + functional */
+  @media (prefers-reduced-motion: reduce) {
+    .alert-banner,
+    .alert-banner-text,
+    .alert-banner-icon,
+    .alert-banner-arrow {
+      animation: none !important;
+    }
+  }
+  @media (max-width: 380px) {
+    .alert-banner-text { font-size: 13px; letter-spacing: 2px; }
+  }
   .live-counter {
     background: var(--ink);
     color: var(--sand);
@@ -652,6 +738,14 @@
 </head>
 <body>
 
+<button type="button" class="alert-banner" id="alertBanner" aria-label="Jump to RSVP form">
+  <div class="alert-banner-inner">
+    <span class="alert-banner-icon">⚠</span>
+    <span class="alert-banner-text">RSVP REQUIRED &nbsp;·&nbsp; TAP TO ENLIST</span>
+    <span class="alert-banner-arrow">▼</span>
+  </div>
+</button>
+
 <div class="dossier">
 
   <div class="top-bar">
@@ -871,6 +965,30 @@
 
 <script>
 (function(){
+  // === ALERT BANNER === scrolls to form, hides when form is in view
+  const alertBanner = document.getElementById('alertBanner');
+  const enlistEl = document.getElementById('enlistSection');
+  if (alertBanner && enlistEl) {
+    alertBanner.addEventListener('click', () => {
+      enlistEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Subtle haptic on supported devices
+      if (navigator.vibrate) navigator.vibrate(15);
+    });
+    // Hide banner once the form is in viewport — they made it
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            alertBanner.classList.add('dismissed');
+          } else {
+            alertBanner.classList.remove('dismissed');
+          }
+        });
+      }, { threshold: 0.15 });
+      io.observe(enlistEl);
+    }
+  }
+
   // === LIVE RECRUIT COUNTER + ROSTER ===
   const kidEl = document.getElementById('kidCount');
   const famEl = document.getElementById('famCount');
@@ -1015,6 +1133,8 @@
       enlistSection.style.display = 'none';
       successCard.classList.add('show');
       successCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Banner did its job — hide it for good
+      if (alertBanner) alertBanner.classList.add('dismissed');
       // Refresh public counter so they see their RSVP added
       loadCounter();
     } catch (err) {
