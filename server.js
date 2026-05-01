@@ -145,30 +145,29 @@ app.get('/', (req, res) => {
 // ----- Public stats endpoint — for the live counter on the page -----
 app.get('/api/public-stats', async (req, res) => {
   try {
-    if (!dbReady) return res.json({ confirmed_kids: 0, confirmed_families: 0, kid_names: [] });
+    if (!dbReady) return res.json({ confirmed_kids: 0, confirmed_families: 0, recruits: [], kid_names: [] });
     const r = await pool.query(
       `SELECT COALESCE(SUM(kid_count), 0)::int AS kids,
               COUNT(*)::int AS families
          FROM rsvps WHERE attending = 'YES'`
     );
-    // Pull kid_names of confirmed RSVPs, oldest first so order is stable
+    // Pull confirmed RSVPs with squad assignment
     const namesRes = await pool.query(
-      `SELECT kid_names FROM rsvps WHERE attending = 'YES' ORDER BY created_at ASC`
+      `SELECT kid_names, squad_preference FROM rsvps WHERE attending = 'YES' ORDER BY created_at ASC`
     );
 
-    // Parse out first names. kid_names field may be "Jackson + Mia", "Jackson, Mia", "Jackson and Mia", etc.
-    const firstNames = [];
+    // Parse out first names + their squad. kid_names field may be "Jackson + Mia", etc.
+    // All kids in one RSVP share the same squad preference.
+    const recruits = [];
     for (const row of namesRes.rows) {
       const raw = (row.kid_names || '').toString();
-      // Split on common separators
+      const squad = (row.squad_preference || 'EITHER').toUpperCase();
       const parts = raw.split(/[+,&]|\band\b|\bw\/\b|\b\+\b|\//i);
       for (const p of parts) {
-        // Take the first word as first name
         const cleaned = p.trim().split(/\s+/)[0];
         if (cleaned && cleaned.length >= 2 && cleaned.length <= 20 && /^[A-Za-z][A-Za-z'\-]*$/.test(cleaned)) {
-          // Title-case it
           const tc = cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
-          firstNames.push(tc);
+          recruits.push({ name: tc, squad: ['BLUE','RED','EITHER'].includes(squad) ? squad : 'EITHER' });
         }
       }
     }
@@ -177,11 +176,13 @@ app.get('/api/public-stats', async (req, res) => {
     res.json({
       confirmed_kids: r.rows[0].kids || 0,
       confirmed_families: r.rows[0].families || 0,
-      kid_names: firstNames
+      recruits: recruits,
+      // Backward-compat: keep kid_names array of just names
+      kid_names: recruits.map(r => r.name)
     });
   } catch (err) {
     console.error('[/api/public-stats]', err);
-    res.json({ confirmed_kids: 0, confirmed_families: 0, kid_names: [] });
+    res.json({ confirmed_kids: 0, confirmed_families: 0, recruits: [], kid_names: [] });
   }
 });
 
